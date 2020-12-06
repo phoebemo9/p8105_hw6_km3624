@@ -10,6 +10,8 @@ library(tidyverse)
 library(modelr)
 library(rvest)
 library(dplyr)
+library(HH)
+library(corrplot)
 
 knitr::opts_chunk$set(
   fig.width = 6,
@@ -32,7 +34,6 @@ scale_fill_discrete = scale_fill_viridis_d
 ## Problem 1
 
 Read in the data
-
 ```{r}
 homicide_df =
   read_csv("Data/homicide-data.csv", na = c("", "NA", "Unknown")) %>%
@@ -48,7 +49,7 @@ homicide_df =
   filter(
     victim_race %in% c("White", "Black"),
     city_state != "Tulsa, AL") %>%
-  select(city_state, resolution, victim_age, victim_race, victim_sex)
+    dplyr::select(city_state, resolution, victim_age, victim_race, victim_sex)
 ```
 
 Start with only one city.
@@ -66,7 +67,7 @@ glm(resolution ~ victim_age + victim_race + victim_sex,
     CI_lower = exp(estimate - 1.96 * std.error),
     CI_upper = exp(estimate + 1.96 * std.error)
   ) %>%
-  select(term, OR, starts_with("CI")) %>%
+  dplyr::select(term, OR, starts_with("CI")) %>%
   knitr::kable(digits = 3)
 ```
 
@@ -80,14 +81,14 @@ models_results_df =
       map(.x = data, ~glm(resolution ~ victim_age + victim_race + victim_sex, data = .x, family = binomial())),
       results = map(models, broom::tidy)
   ) %>%
-  select(city_state, results) %>%
+  dplyr::select(city_state, results) %>%
   unnest(results) %>%
   mutate(
     OR = exp(estimate),
     CI_lower = exp(estimate - 1.96 * std.error),
     CI_upper = exp(estimate + 1.96 * std.error)
   ) %>%
-  select(city_state, term, OR, starts_with("CI"))
+  dplyr::select(city_state, term, OR, starts_with("CI"))
 ```
 
 ```{r}
@@ -102,6 +103,58 @@ models_results_df %>%
 In the plot, the OR is mostly greater than 1, meaning it is less likely that homicide happens in the Black race than the White race.
 
 ## Problem 2
+
+read in data and manipulation
+```{r}
+bw_df =
+  read_csv("Data/birthweight.csv")
+```
+
+stepwise regression to find find suitable predictors
+```{r}
+# checking collinearity
+par(mar = c(4,5,1,1))
+cor(bw_df %>% dplyr::select(-c(pnumlbw, pnumsga))) %>%
+  corrplot(method = "circle", type = "upper", diag = FALSE)
+
+# delwt and ppwt have high correlation; mrace and frace have high correlation; ppbmi and ppwt have high correlation; so we preserve one of them in each high correlation pair; pnumlbw and pnumsga are dropped becasue all entries for them are 0
+
+# backward regression
+stepOne = lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + malform + menarche + mheight + momage + mrace + parity + ppbmi + smoken + wtgain, data = bw_df) %>% broom::tidy()
+
+# exclude ppbmi which p-value = 0.945
+stepTwo = lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + malform + menarche + mheight + momage + mrace + parity + smoken + wtgain, data = bw_df) %>% broom::tidy()
+
+# exclude malform which p-value = 0.837
+stepThree = lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + menarche + mheight + momage + mrace + parity + smoken + wtgain, data = bw_df) %>% broom::tidy()
+
+# exclude menarche which p-value = 0.14
+stepFinal = lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mheight + momage + mrace + parity + smoken + wtgain, data = bw_df)
+```
+
+After solving for collinearity and using backward regression to select reasonable predictors for my model, I include 12 variables as predictors. 
+
+delwt and ppwt have high correlation; mrace and frace have high correlation; ppbmi and ppwt have high correlation; so we preserve one of them in each high correlation pair; pnumlbw and pnumsga are dropped becasue all entries for them are 0.
+
+In the backward regression, ppbmi, malform, and menarche are dropped in order.
+
+Here is a plot showing residuals against fitted values for my model
+```{r}
+# make a plot of model residuals against fitted values
+bw_df %>%
+  add_predictions(stepFinal) %>%
+  add_residuals(stepFinal) %>%
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(color = 'lightpink')
+```
+
+We can see from the plot: the residuals are bouncing around 0 and indicates a quite equal variance.
+
+Next, compare my model to the two given models through CV
+
+```{r}
+
+```
 
 
 

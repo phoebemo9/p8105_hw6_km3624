@@ -153,8 +153,39 @@ We can see from the plot: the residuals are bouncing around 0 and indicates a qu
 Next, compare my model to the two given models through CV
 
 ```{r}
+model_two = lm(bwt ~ blength + gaweeks, data = bw_df)
+model_three = lm(bwt ~ bhead * blength * babysex, data = bw_df)
 
+cv_df = crossv_mc(bw_df, 100) %>%
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  ) %>%
+  mutate(
+    my_mod = map(train, ~lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mheight + momage + mrace + parity + smoken + wtgain, data = .x)),
+    second_mod = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+    third_mod = map(train, ~lm(bwt ~ bhead * blength * babysex, data = .x))
+  ) %>%
+  mutate(
+    rmse_my = map2_dbl(my_mod, test, ~rmse(model = .x, data = .y)),
+    rmse_second = map2_dbl(second_mod, test, ~rmse(model = .x, data = .y)),
+    rmse_third = map2_dbl(third_mod, test, ~rmse(model = .x, data = .y))
+  )
+
+cv_df %>%
+  dplyr::select(starts_with("rmse")) %>%
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>%
+  mutate(model = fct_inorder(model)) %>%
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
 ```
 
+As can see from the plot showing the cross-validated prediction errors(rmse) for each model, my diy model performs the best and has the lease median of rmse.
 
+
+## Problem 3
 

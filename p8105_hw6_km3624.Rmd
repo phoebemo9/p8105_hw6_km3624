@@ -12,6 +12,7 @@ library(rvest)
 library(dplyr)
 library(HH)
 library(corrplot)
+library(patchwork)
 
 knitr::opts_chunk$set(
   fig.width = 6,
@@ -188,4 +189,87 @@ As can see from the plot showing the cross-validated prediction errors(rmse) for
 
 
 ## Problem 3
+proportion of the outcome variation explained by the predictor(adjusted R2)
+
+read in 2017 Central Park weather data
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  dplyr::select(name, id, everything())
+```
+
+Do bootstrapping and plot the distribution of two estimates
+```{r}
+boot_straps =
+  weather_df %>%
+  modelr::bootstrap(n = 5000) %>%
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x)),
+    results = map(models, broom::tidy),
+    glance = map(models, broom::glance)
+  ) %>%
+  dplyr::select(-strap, -models) %>%
+  unnest(results) %>%
+  dplyr::select(-statistic, -p.value) %>%
+  unnest(glance) %>%
+  dplyr::select(.id, term, estimate, adj.r.squared)
+
+boot_intercept =
+  boot_straps %>%
+  filter(term == "(Intercept)")
+
+boot_tmin =
+  boot_straps %>%
+  filter(term == "tmin")
+
+join_df =
+  left_join(boot_intercept, boot_tmin, by = ".id") %>%
+  mutate(adj_r_squared = adj.r.squared.x) %>%
+  dplyr::select(-adj.r.squared.y, -adj.r.squared.x, -term.x, -term.y) %>%
+  mutate(log_multiply = log(estimate.x * estimate.y))
+```
+
+Here is the plot of tmax estimate and tmin estimate
+```{r}
+tmax_est =
+  join_df %>%
+  ggplot(aes(x = estimate.x)) +
+  geom_density() +
+  labs(title = "Estimate of Tmin") +
+  theme(plot.title = element_text(size = 15, hjust = 0.5))
+tmin_est = 
+  join_df %>%
+  ggplot(aes(x = estimate.y)) +
+  geom_density() +
+  labs(title = "Estimate of Tmax") +
+  theme(plot.title = element_text(size = 15, hjust = 0.5))
+tmax_est + tmin_est
+```
+
+The distribution of estimate of tmin has a little bit heavy tail to the high values and the distribution of estimate of tmax has a little bit heavy tail to the low values
+
+Next, identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval for r2 and log(b1*b2)
+```{r}
+join_df %>%
+  dplyr::select(adj_r_squared, log_multiply) %>%
+  pivot_longer(
+    1:2,
+    names_to = "type",
+    values_to = "value"
+  ) %>%
+  group_by(type) %>%
+  summarize(
+    CI_lower = quantile(value, 0.025),
+    CI_upper = quantile(value, 0.975)
+  ) %>%
+  knitr::kable()
+```
 
